@@ -1,0 +1,9 @@
+torch
+sae-lens
+ipykernel
+matplotlib
+safetensors
+numpy
+
+--extra-index-url https://pypi.nvidia.com
+cuml-cu12==24.8.*
