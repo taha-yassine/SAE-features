@@ -1,6 +1,7 @@
 # %%
 import torch
 from safetensors import safe_open
+from safetensors.torch import save_file
 import matplotlib.pyplot as plt
 import networkx as nx
 import cupy as cp
@@ -92,6 +93,17 @@ def compute_jaccard(cooc_matrix):
 
 # Compute Jaccard similarity matrix
 jaccard_matrix = compute_jaccard(cooc_matrix)
+
+# %%
+# Save Jaccard similarity matrix to file
+tensors_dict = {
+    "data": torch.from_numpy(jaccard_matrix.data.get()),
+    "row": torch.from_numpy(jaccard_matrix.row.get()),
+    "col": torch.from_numpy(jaccard_matrix.col.get()),
+    "shape": torch.tensor(jaccard_matrix.shape)
+}
+
+save_file(tensors_dict, "jaccard_matrix.safetensors")
 
 # %%
 # Plot Jaccard similarity matrix
