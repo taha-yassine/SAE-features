@@ -20,10 +20,12 @@ def activations_gen(model, tokenizer, sae, batched_dataset, device):
         activations = latents[mask]
 
         # Convert to lists and yield individual elements
-        locations_list = locations.cpu().tolist()
-        activations_list = activations.cpu().tolist()
-        yield from ({"locations": loc, "activations": act} 
-                   for loc, act in zip(locations_list, activations_list))
+        yield from ({"batch_idx": int(b), 
+                    "ctx_pos": int(c), 
+                    "feature_idx": int(f), 
+                    "activation": a} 
+                   for b, c, f, a 
+                   in torch.cat([locations, activations.unsqueeze(-1)], dim=-1).tolist())
 
         # Free up memory
         del batch
