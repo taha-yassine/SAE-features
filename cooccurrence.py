@@ -6,42 +6,53 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import cupy as cp
 import cupyx.scipy.sparse as cusparse
+import math
+from tqdm import tqdm
+from datasets import load_from_disk
+import polars as pl
+import numpy as np
+from itertools import pairwise
+
 # %%
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(device)
 
 # %%
-with safe_open("cached_activations/gpt2-small-res-jb-feature-splitting-TinyStories.safetensors", framework="pt", device=device) as f:
-    # 3D indices of form  (batch_id, ctx_pos, feature_id)
-    idx = f.get_tensor("locations").to(torch.int)
-    # Corresponding activations
-    activations = f.get_tensor("activations")
-
-n_features = int(torch.max(idx[:,2])) + 1
-
-# Keep only a subset of samples
-# idx = idx[idx[:,0] < 8000]
-# Keep only a subset of features
-# idx = idx[idx[..., 2] < 1000]
+dataset = load_from_disk("./cached_activations/gpt2-small-res-jb-feature-splitting/rpj-v2-sample")
+df = dataset.to_polars()
 
 # %%
-# Goal: get indices of features activating on the same token for each token (batch index doesn't matter)
+n_features = df["feature_idx"].max() + 1
+print(f"Number of features: {n_features:,}")
 
-# 1. Get unique values of first 2 dims (i.e. absolute token index) and their counts
-# Trick is to use Cantor pairing function to have a bijective mapping between (batch_id, ctx_pos) and a unique 1D index
-# Faster than running `torch.unique_consecutive` on the first 2 dims
-idx_cantor = (idx[:,0] + idx[:,1]) * (idx[:,0] + idx[:,1] + 1) // 2 + idx[:,1]
-unique_idx, idx_counts = torch.unique_consecutive(idx_cantor, return_counts=True)
-n_tokens = len(unique_idx)
+# %%
+# Goal: merge batch_idx and ctx_pos into a 1D token_idx
+# Easy since batch_idx and ctx_pos are grouped together
+# 0 0 -> 0
+# 0 0 -> 0
+# ...
+# 0 1 -> 1
+# 0 1 -> 1
+# ...
+# 1 0 -> i
+# 1 0 -> i
+# ...
 
-# 2. The Cantor indices are not consecutive, so we create sorted ones from the counts
-idx_flat = torch.repeat_interleave(torch.arange(n_tokens, device=device), idx_counts)
+df = df.with_columns(
+    (pl.col('batch_idx') != pl.col('batch_idx').shift()) # ┐
+    .or_(pl.col('ctx_pos') != pl.col('ctx_pos').shift()) # ┴─ Mark positions where a new token starts
+    .fill_null(False) # Fix for first row being null
+    .cum_sum() # Increment for each new token (ie. position marked with True)
+    .alias('token_idx')
+)
+n_tokens = df["token_idx"].max() + 1
+print(f"Number of tokens: {n_tokens:,}")
 
 # %%
 # Plot histogram of feature activation sparsity
 
 plt.figure(figsize=(10, 6))
-plt.hist(idx_counts.numpy(force=True), edgecolor='black', bins=50)
+plt.hist(df.group_by('token_idx').len()['len'], bins=50, edgecolor='black')
 plt.title('Histogram of Feature Activation Sparsity')
 plt.xlabel('Number of Features Activated')
 plt.ylabel('Count')
@@ -52,8 +63,8 @@ plt.show()
 # Plot histogram of feature activation values
 
 plt.figure(figsize=(10, 6))
-logbins = torch.logspace(torch.log10(activations.min()), torch.log10(activations.max()), 50)
-plt.hist(activations.numpy(force=True), edgecolor='black', bins=logbins.numpy(force=True))
+logbins = np.logspace(np.log10(df["activation"].min()), np.log10(df["activation"].max()), 50)
+plt.hist(df["activation"], edgecolor='black', bins=logbins)
 plt.title('Histogram of Feature Activation Values')
 plt.xlabel('Activation Value')
 plt.ylabel('Count')
@@ -62,27 +73,33 @@ plt.tight_layout()
 plt.show()
 
 # %%
-# cooc_matrix = cusparse.csr_matrix((n_features, n_features))
+cooc_matrix = cusparse.csr_matrix((n_features, n_features))
 
-# batch_size = n_tokens
-# epochs = math.ceil(n_tokens/batch_size)
+# Number of tokens per batch
+# Can be as high as the GPU can handle
+batch_size = min(32768, n_tokens)
 
-# slices = torch.cumsum(torch.zeros(epochs+1, dtype=idx_counts.dtype, device=device).scatter_add_(0, torch.repeat_interleave(torch.arange(epochs, device=device), batch_size)[:-(batch_size-n_tokens%batch_size)]+1, idx_counts),0) # TODO: explain this monstrosity
+class BatchedDataset:
+    def __init__(self, df, batch_size, n_tokens):
+        self.df = df
+        self.batch_size = batch_size
+        self.n_tokens = n_tokens
+        
+    def __iter__(self):
+        n_batches = math.ceil(self.n_tokens/self.batch_size)
+        for start_idx, end_idx in pairwise(range(0, n_batches*self.batch_size, self.batch_size)):
+            yield self.df.filter(pl.col('token_idx').is_between(start_idx, end_idx, closed="left"))
+    
+    def __len__(self):
+        return math.ceil(self.n_tokens/self.batch_size)
 
-# for i in tqdm(range(epochs), desc="Processing batches", unit="batch"):
-#     rows = cp.asarray(idx[slices[i]:slices[i+1], 2])
-#     cols = cp.asarray(idx_flat[slices[i]:slices[i+1]])
-#     data = cp.ones(slices[i+1] - slices[i])
-#     sparse_matrix = cusparse.coo_matrix((data, (rows, cols)), shape=(n_features, n_tokens))
-#     gram = sparse_matrix @ sparse_matrix.T
-#     cooc_matrix += gram
-
-# Use cupy as it supports sparse matrices better than pytorch
-rows = cp.asarray(idx[:, 2])
-cols = cp.asarray(idx_flat)
-data = cp.ones(len(rows))
-sparse_matrix = cusparse.coo_matrix((data, (rows, cols)), shape=(n_features, n_tokens))
-cooc_matrix = sparse_matrix @ sparse_matrix.T
+for batch in tqdm(BatchedDataset(df, batch_size, n_tokens), desc="Processing batches", unit="batch"):
+    rows = cp.asarray(batch["feature_idx"])
+    cols = cp.asarray(batch["token_idx"])
+    data = cp.ones(len(rows))
+    sparse_matrix = cusparse.coo_matrix((data, (rows, cols)), shape=(n_features, n_tokens))
+    gram = sparse_matrix @ sparse_matrix.T
+    cooc_matrix += gram
 
 # %%
 # Compute Jaccard similarity
