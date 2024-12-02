@@ -1,9 +1,11 @@
+"""
+This script computes feature co-occurrences normalized by their Jaccard similarities from a dataset of feature activations. The computation is done in batches on GPU and saved to disk.
+"""
+
 # %%
 import torch
-from safetensors import safe_open
 from safetensors.torch import save_file
 import matplotlib.pyplot as plt
-import networkx as nx
 import cupy as cp
 import cupyx.scipy.sparse as cusparse
 import math
@@ -77,19 +79,19 @@ cooc_matrix = cusparse.csr_matrix((n_features, n_features))
 
 # Number of tokens per batch
 # Can be as high as the GPU can handle
-batch_size = min(32768, n_tokens)
+batch_size = min(2**15, n_tokens)
 
 class BatchedDataset:
     def __init__(self, df, batch_size, n_tokens):
         self.df = df
         self.batch_size = batch_size
         self.n_tokens = n_tokens
-        
+
     def __iter__(self):
         n_batches = math.ceil(self.n_tokens/self.batch_size)
         for start_idx, end_idx in pairwise(range(0, n_batches*self.batch_size, self.batch_size)):
             yield self.df.filter(pl.col('token_idx').is_between(start_idx, end_idx, closed="left"))
-    
+
     def __len__(self):
         return math.ceil(self.n_tokens/self.batch_size)
 
@@ -121,58 +123,3 @@ tensors_dict = {
 }
 
 save_file(tensors_dict, "jaccard_matrix.safetensors")
-
-# %%
-# Plot Jaccard similarity matrix
-plt.figure(figsize=(10, 6))
-plt.imshow(jaccard_matrix.get().toarray(), aspect='equal', cmap='viridis')
-plt.colorbar(label='Jaccard Similarity')
-plt.title('Jaccard Similarity Matrix')
-plt.xlabel('Feature ID')
-plt.ylabel('Feature ID')
-plt.show()
-
-# %%
-# Plot histogram of Jaccard similarity values (excluding zeros)
-plt.figure(figsize=(10, 6))
-plt.hist(jaccard_matrix.data.get(), bins=50, edgecolor='black')
-plt.title('Histogram of Non-Zero Jaccard Similarity Values')
-# plt.yscale('log')
-plt.xlabel('Jaccard Similarity')
-plt.ylabel('Frequency')
-plt.tight_layout()
-plt.show()
-
-# %%
-# Remove edges corresponding to random coocurrences
-threshold = 0.1 # Needs to be adjusted
-jaccard_matrix_thresholded = cusparse.coo_matrix(
-    (jaccard_matrix.data[jaccard_matrix.data > threshold], (jaccard_matrix.row[jaccard_matrix.data > threshold], jaccard_matrix.col[jaccard_matrix.data > threshold])),
-    shape=(n_features, n_features)
-)
-
-# Create undirected graph
-g = nx.from_scipy_sparse_array(jaccard_matrix_thresholded)
-
-# Remove self-loops
-g.remove_edges_from(nx.selfloop_edges(g))
-
-pos = nx.spring_layout(g)
-plt.figure(figsize=(10, 6))
-nx.draw(g, pos, with_labels=False, node_size=5, node_color='skyblue', edge_color='gray')
-plt.title('Feature Co-occurrence Graph')
-plt.show()
-
-# %%
-# Calculate node degrees
-degrees = [d for n, d in g.degree()]
-
-# Plot histogram of node degrees
-plt.figure(figsize=(10, 6))
-plt.hist(degrees, bins=50, edgecolor='black')
-plt.title('Histogram of Node Degrees')
-plt.xlabel('Degree')
-plt.ylabel('Frequency')
-plt.yscale('log')  # Using log scale for better visualization
-plt.tight_layout()
-plt.show()
