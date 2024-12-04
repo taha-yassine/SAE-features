@@ -5,6 +5,19 @@ from sae_lens import SAE
 from datasets import load_dataset, Dataset
 from tqdm import tqdm
 from pathlib import Path
+from importlib.resources import files
+import yaml
+import sys
+
+def get_base_model(sae_release):
+    with (Path(files("sae_lens")) / "pretrained_saes.yaml").open("r") as f:
+        data = yaml.safe_load(f)
+        try:
+            model = data[sae_release]['model']
+            return model
+        except KeyError:
+            print(f"Base model not found for {sae_release}.")
+            sys.exit(1)
 
 def activations_gen(model, tokenizer, sae, batched_dataset, device):
     for batch_idx, batch in enumerate(tqdm(batched_dataset, desc="Processing batches", unit="batch")):
@@ -37,7 +50,7 @@ def activations_gen(model, tokenizer, sae, batched_dataset, device):
         del activations
         torch.cuda.empty_cache()
 
-def cache_activations(model_name, dataset_name, sae_release, sae_id, batch_size, output_dir, streaming=False):
+def cache_activations(dataset_name, sae_release, sae_id, batch_size, output_dir, streaming=False):
     # Disable gradient calculation
     torch.set_grad_enabled(False)
 
@@ -45,7 +58,7 @@ def cache_activations(model_name, dataset_name, sae_release, sae_id, batch_size,
     print(f"Using device: {device}")
 
     # Initialize model and tokenizer
-    model = HookedTransformer.from_pretrained(model_name, device=device)
+    model = HookedTransformer.from_pretrained(get_base_model(sae_release), device=device)
     tokenizer = model.tokenizer
 
     # Initialize SAE
@@ -80,7 +93,6 @@ def cache_activations(model_name, dataset_name, sae_release, sae_id, batch_size,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cache activations from a language model.")
-    parser.add_argument("--model", default="gpt2", help="Name of the language model to use")
     parser.add_argument("--dataset", default="Skylion007/openwebtext", help="Name of the dataset to use")
     parser.add_argument("--sae-release", default="gpt2-small-res-jb-feature-splitting", help="SAE release name")
     parser.add_argument("--sae-id", default="blocks.8.hook_resid_pre_768", help="SAE ID")
@@ -97,7 +109,6 @@ if __name__ == "__main__":
     ) / args.sae_release / args.dataset.split('/')[-1]
 
     cache_activations(
-        args.model, 
         args.dataset, 
         args.sae_release, 
         args.sae_id, 
