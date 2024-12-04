@@ -8,6 +8,7 @@ from pathlib import Path
 from importlib.resources import files
 import yaml
 import sys
+import re
 
 def get_base_model(sae_release):
     with (Path(files("sae_lens")) / "pretrained_saes.yaml").open("r") as f:
@@ -21,10 +22,10 @@ def get_base_model(sae_release):
 
 def get_layer(sae_id):
     """Try inferring layer number from block id"""
-    if 'blocks.' in sae_id:
-        return int(sae_id.split('.')[1])
-    elif 'layer_' in sae_id:
-        return int(sae_id.split('_')[1])
+    if match := re.match(r'blocks\.(\d+)', sae_id):
+        return int(match.group(1))
+    elif match := re.match(r'layer_(\d+)', sae_id):
+        return int(match.group(1))
     else:
         return None
 
