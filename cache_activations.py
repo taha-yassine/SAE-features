@@ -7,8 +7,8 @@ from tqdm import tqdm
 from pathlib import Path
 
 def activations_gen(model, tokenizer, sae, batched_dataset, device):
-    for batch, batch_idx in enumerate(tqdm(batched_dataset, desc="Processing batches", unit="batch")):
-        batch_size = batch.shape[0]
+    for batch_idx, batch in enumerate(tqdm(batched_dataset, desc="Processing batches", unit="batch")):
+        batch_size = len(batch['raw_content'])
         batch = tokenizer(batch['raw_content'], truncation=True, padding=True, return_tensors='pt').to(device)
         outputs = model(batch['input_ids'], attention_mask=batch['attention_mask'], stop_at_layer=8)
 
@@ -23,7 +23,7 @@ def activations_gen(model, tokenizer, sae, batched_dataset, device):
         # Convert to lists and yield individual elements
         yield from ({"batch_idx": int(b)+batch_idx*batch_size, 
                     "ctx_pos": int(c), 
-                    "feature_idx": int(f), 
+                    "feature_idx": int(f),
                     "activation": a} 
                    for b, c, f, a 
                    in torch.cat([locations, activations.unsqueeze(-1)], dim=-1).tolist())
