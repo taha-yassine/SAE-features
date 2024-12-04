@@ -99,16 +99,12 @@ if __name__ == "__main__":
     parser.add_argument("--sae-release", default="gpt2-small-res-jb-feature-splitting", help="SAE release name")
     parser.add_argument("--sae-id", default="blocks.8.hook_resid_pre_768", help="SAE ID")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size for processing")
-    parser.add_argument("--output-dir", default=None, help="Output directory path")
+    parser.add_argument("--output-dir", default="cached_activations", type=Path, help="Output directory path")
     parser.add_argument("--streaming", action="store_true", help="Process dataset in streaming mode")
 
     args = parser.parse_args()
 
-    args.output_dir = (
-        Path(args.output_dir) 
-        if args.output_dir is not None 
-        else Path("cached_activations")
-    ) / args.sae_release / args.dataset.split('/')[-1]
+    args.output_dir = args.output_dir / args.sae_release / args.dataset.split('/')[-1]
 
     cache_activations(
         args.dataset, 
