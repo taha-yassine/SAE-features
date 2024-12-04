@@ -19,11 +19,20 @@ def get_base_model(sae_release):
             print(f"Base model not found for {sae_release}.")
             sys.exit(1)
 
-def activations_gen(model, tokenizer, sae, batched_dataset, device):
+def get_layer(sae_id):
+    """Try inferring layer number from block id"""
+    if 'blocks.' in sae_id:
+        return int(sae_id.split('.')[1])
+    elif 'layer_' in sae_id:
+        return int(sae_id.split('_')[1])
+    else:
+        return None
+
+def activations_gen(model, tokenizer, sae, batched_dataset, device, stop_at_layer=None):
     for batch_idx, batch in enumerate(tqdm(batched_dataset, desc="Processing batches", unit="batch")):
         batch_size = len(batch['raw_content'])
         batch = tokenizer(batch['raw_content'], truncation=True, padding=True, return_tensors='pt').to(device)
-        outputs = model(batch['input_ids'], attention_mask=batch['attention_mask'], stop_at_layer=8)
+        outputs = model(batch['input_ids'], attention_mask=batch['attention_mask'], stop_at_layer=stop_at_layer)
 
         latents = sae.encode(outputs)
         latents = latents * batch['attention_mask'][:, :, torch.newaxis] # Zero out padding tokens
@@ -82,7 +91,8 @@ def cache_activations(dataset_name, sae_release, sae_id, batch_size, output_dir,
             "tokenizer": tokenizer,
             "sae": sae,
             "batched_dataset": batched_dataset,
-            "device": device
+            "device": device,
+            "stop_at_layer": get_layer(sae_id)
         }
     )
     
