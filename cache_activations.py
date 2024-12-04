@@ -59,7 +59,7 @@ def activations_gen(model, tokenizer, sae, batched_dataset, device, stop_at_laye
         del activations
         torch.cuda.empty_cache()
 
-def cache_activations(dataset_name, sae_release, sae_id, batch_size, output_dir, streaming=False):
+def cache_activations(dataset_name, sae_release, sae_id, batch_size, output_dir, num_samples=None, streaming=False):
     # Disable gradient calculation
     torch.set_grad_enabled(False)
 
@@ -80,6 +80,8 @@ def cache_activations(dataset_name, sae_release, sae_id, batch_size, output_dir,
     # Load and batch the dataset
     # TODO: have a way to automatically determine correct column name
     dataset = load_dataset(dataset_name, split='train', trust_remote_code=True, streaming=streaming).select_columns(['raw_content'])
+    if num_samples is not None:
+        dataset = dataset.take(num_samples)
     batched_dataset = dataset.batch(batch_size=batch_size)
 
 
@@ -110,6 +112,7 @@ if __name__ == "__main__":
     parser.add_argument("--sae-id", default="blocks.8.hook_resid_pre_768", help="SAE ID", metavar="ID") 
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size for processing (default: %(default)s)", metavar="SIZE")
     parser.add_argument("--output-dir", default="./cached_activations", type=Path, help="Output directory path (default: %(default)s)", metavar="DIR")
+    parser.add_argument("-n", "--num-samples", type=int, required=False, help="Number of samples to process (default: all)", metavar="NUM")
     parser.add_argument("--streaming", action="store_true", help="Process dataset in streaming mode (default: %(default)s)")
 
     args = parser.parse_args()
@@ -122,5 +125,6 @@ if __name__ == "__main__":
         args.sae_id, 
         args.batch_size, 
         args.output_dir,
-        args.streaming
+        args.num_samples,
+        args.streaming,
     )
