@@ -69,8 +69,10 @@ def cache_activations(dataset_name, sae_release, sae_id, batch_size, output_dir,
     )
 
     # Load and batch the dataset
-    dataset = load_dataset(dataset_name, split='train', trust_remote_code=True, streaming=streaming)
+    # TODO: have a way to automatically determine correct column name
+    dataset = load_dataset(dataset_name, split='train', trust_remote_code=True, streaming=streaming).select_columns(['raw_content'])
     batched_dataset = dataset.batch(batch_size=batch_size)
+
 
     # Create dataset from generator
     activations_dataset = Dataset.from_generator(
