@@ -95,12 +95,12 @@ def cache_activations(dataset_name, sae_release, sae_id, batch_size, output_dir,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cache activations from a language model.")
-    parser.add_argument("--dataset", default="Skylion007/openwebtext", help="Name of the dataset to use")
-    parser.add_argument("--sae-release", default="gpt2-small-res-jb-feature-splitting", help="SAE release name")
-    parser.add_argument("--sae-id", default="blocks.8.hook_resid_pre_768", help="SAE ID")
-    parser.add_argument("--batch-size", type=int, default=64, help="Batch size for processing")
-    parser.add_argument("--output-dir", default="cached_activations", type=Path, help="Output directory path")
-    parser.add_argument("--streaming", action="store_true", help="Process dataset in streaming mode")
+    parser.add_argument("--dataset", default="eleutherai/rpj-v2-sample", help="Name of the dataset to use", metavar="DATASET")
+    parser.add_argument("--sae-release", default="gpt2-small-res-jb-feature-splitting", help="SAE release name", metavar="RELEASE")
+    parser.add_argument("--sae-id", default="blocks.8.hook_resid_pre_768", help="SAE ID", metavar="ID") 
+    parser.add_argument("--batch-size", type=int, default=64, help="Batch size for processing (default: %(default)s)", metavar="SIZE")
+    parser.add_argument("--output-dir", default="./cached_activations", type=Path, help="Output directory path (default: %(default)s)", metavar="DIR")
+    parser.add_argument("--streaming", action="store_true", help="Process dataset in streaming mode (default: %(default)s)")
 
     args = parser.parse_args()
 
