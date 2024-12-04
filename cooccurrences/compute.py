@@ -103,12 +103,17 @@ for batch in tqdm(BatchedDataset(df, batch_size, n_tokens), desc="Processing bat
     gram = sparse_matrix @ sparse_matrix.T
     cooc_matrix += gram
 
+# Matrix is symmetric, only keep upper triangle
+cooc_matrix = cusparse.triu(cooc_matrix)
+
 # %%
 # Compute Jaccard similarity
 def compute_jaccard(cooc_matrix):
     self_occurrence = cooc_matrix.diagonal()
     jaccard_matrix = cooc_matrix / (self_occurrence[:, None] + self_occurrence - cooc_matrix)
-    return jaccard_matrix
+
+    # Remove self-loops and only keep upper triangle
+    return cusparse.triu(jaccard_matrix, k=1)
 
 # Compute Jaccard similarity matrix
 jaccard_matrix = compute_jaccard(cooc_matrix)
